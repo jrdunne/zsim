@@ -127,6 +127,7 @@ class Decoder {
                 void reorderRegs(uint32_t* regArray, uint32_t numRegs);
         };
 
+
     public:
         //If oooDecoding is true, produces a DynBbl with DynUops that can be used in OOO cores
         static BblInfo* decodeBbl(BBL bbl, bool oooDecoding);

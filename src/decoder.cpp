@@ -995,7 +995,7 @@ bool Decoder::decodeInstr(INS ins, uint64_t pc, DynUopVec& uops) {
         case XC(XSAVEOPT): //hold your horses, it's optimized!! (AVX)
             break;
 
-        /* Control flow ops (branches, jumps) */
+        /* Control flow ops (branchbranches, jumps) */
         case XC(COND_BR):
         case XC(UNCOND_BR):
             // We model all branches and jumps with a latency of 1. Far jumps are really expensive, but they should be exceedingly rare (from Intel's manual, they are used for call gates, task switches, etc.)

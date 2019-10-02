@@ -1286,6 +1286,21 @@ bool Decoder::decodeCustomInstr(CustomOp cop, DynUopVec& uops) {
 #endif
     bool inaccurate = false;
     switch (cop) {
+        case CustomOp::PREFETCH_BLOCK: {
+            panic("REACHED CUSTOM PREFETCH BLOCK NOT IMPLIMENTED");
+            // will have an address and a number of instructions to fetch
+            DynUop uop;
+            uop.clear();
+            uop.rs[0] = 0;
+            uop.rs[1] = 0;
+            uop.rd[0] = 0;
+            uop.rd[1] = 0;
+            uop.lat = 1;
+            uop.type = UopType::LOADI;
+            uop.portMask = PORT_2;
+            uops.push_back(uop);
+            break;
+        }
         case CustomOp::PREFETCH_CODE: {
             // We assume this op has no XED info so we adapt the logic of emitExecUop() and emitLoad() here.
             // The following defines no register dependencies, thus it is appropriate only for immediate-based

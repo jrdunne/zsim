@@ -1000,6 +1000,7 @@ void SimInit(const char* configFile, const char* outputDir, uint32_t shmid) {
 
     PreInitStats();
 
+    // TODO: What is the point of this? It isnt used in the example config and sets numCores = 0?
     zinfo->traceDriven = config.get<bool>("sim.traceDriven", false);
 
     if (zinfo->traceDriven) {

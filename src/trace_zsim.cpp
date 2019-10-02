@@ -176,13 +176,16 @@ struct bbl_cache_entry {
 struct threadInfo {
     int tid;
     std::string tracefile;
-    std::string binaries;
-    std::string type;
+    //std::string binaries;
+    //std::string type;
 
     threadInfo() {};
 
-    threadInfo(int _tid, std::string _tracefile, std::string _binaries, std::string _type) :
-        tid(_tid), tracefile(_tracefile), binaries(_binaries), type(_type) {};
+    threadInfo(int _tid, std::string _tracefile) :
+            tid(_tid), tracefile(_tracefile) {};
+
+    //threadInfo(int _tid, std::string _tracefile, std::string _binaries, std::string _type) :
+    //    tid(_tid), tracefile(_tracefile), binaries(_binaries), type(_type) {};
 };
 
 void sim_mem_op(uint32_t tid, const InstInfo *insi) {
@@ -220,20 +223,21 @@ void *simtrace(void *arg) {
     int tid = ti->tid;
     std::unordered_map<uint64_t, bbl_cache_entry> bbl_cache;
 
-    TraceType type;
-    if(ti->type.compare("MEMTRACE") == 0) {
-         type = TraceType::MEMTRACE;
-    }
-#ifdef ZSIM_USE_YT
-    else if(ti->type.compare("YT") == 0) {
-        type = TraceType::YT;
-    }
-#endif  // ZSIM_USE_YT
-    else {
-        panic("Tid %i: Unsupported trace format", tid);
-    }
+//     if(ti->type.compare("MEMTRACE") == 0) {
+//          type = TraceType::MEMTRACE;
+//     }
+// #ifdef ZSIM_USE_YT
+//     else if(ti->type.compare("YT") == 0) {
+//         type = TraceType::YT;
+//     }
+// #endif  // ZSIM_USE_YT
+//     else {
+//         panic("Tid %i: Unsupported trace format", tid);
+//     }
 
-    TraceReader reader(ti->tracefile, type, ti->binaries);
+    //TraceReader reader(ti->tracefile, type, ti->binaries);
+
+    IntelPTReader reader(ti->tracefile);
 
     if (!reader) {
         panic("Tid %i: Could not open input files", tid);
@@ -282,7 +286,9 @@ void *simtrace(void *arg) {
             /* In Memtrace, basic blocks can be interrupted by signal handlers and potentially for
              * other reasons which is why we cannot cache basic blocks and need to decode and
              * simulate each instruction individually */
-            bool cache_bbl = type != TraceType::MEMTRACE;
+             // We want to do every instruction since this is going to be dotnet code with be 
+             // self modifying
+            bool cache_bbl = false; //type != TraceType::MEMTRACE;
 
             while (1) {
                 bbl.push_back(*insi);
@@ -455,10 +461,11 @@ int main(int argc, char *argv[]) {
 
         if (conf.exists(p_ss.str().c_str())) {
             const char* trace = realpath(conf.get<const char*>(p_ss.str(), cwd), nullptr);
-            const char* binaries = realpath(conf.get<const char*>("trace_binaries", cwd), nullptr);
-            const char* type = conf.get<const char*>("trace_type", cwd);
-
-            ti[i] = {(int32_t)i, std::string(trace), std::string(binaries), std::string(type)};
+            //const char* binaries = realpath(conf.get<const char*>("trace_binaries", cwd), nullptr);
+            //const char* type = conf.get<const char*>("trace_type", cwd);
+            if (!trace) panic("trace file not found");
+            
+            ti[i] = threadInfo((int32_t)i, std::string(trace)); // std::string(binaries), std::string(type)};
             fPtrs[i] = zinfo->cores[i]->GetFuncPtrs();
             cores[i] = zinfo->cores[i];
             threads_active++;

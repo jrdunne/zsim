@@ -28,21 +28,19 @@
 
 #include <cstdint>
 #include <memory>
-#include <string>
-#include <tuple>
+#include <mutex>
 #include <unordered_map>
-#include <vector>
-#ifdef ZSIM_USE_YT
-#include "experimental/users/granta/yt/element-reader.h"
-#endif  // ZSIM_USE_YT
-#include "analyzer.h"
+#include <string>
+#include <stdio.h>
+
 extern "C" {
 #include "public/xed/xed-interface.h"
 }
 
 enum class CustomOp : uint8_t {
   NONE,
-  PREFETCH_CODE
+  PREFETCH_CODE,
+  PREFETCH_BLOCK
 };
 
 struct InstInfo {
@@ -59,85 +57,80 @@ struct InstInfo {
   bool valid;                     // True until the end of the sequence
 };
 
-enum class TraceType {
-#ifdef ZSIM_USE_YT
-  YT,
-#endif  // ZSIM_USE_YT
-  MEMTRACE
-};
-
 class TraceReader {
  public:
-  // The default-constructed object will not return valid instructions
-  TraceReader();
-  // A trace and single-binary object
-  TraceReader(const std::string &_trace, TraceType _type,
-           const std::string &_binary, uint64_t _offset);
-  // A trace and multi-binary object which reads 'binary-info.txt' from the
-  // input path. This file contains one '<binary> <offset>' pair per line.
-  TraceReader(const std::string &_trace, TraceType _type,
-           const std::string &_binary_group_path);
-  ~TraceReader();
-  // A constructor that fails will cause operator! to return true
-  bool operator!();
-#ifdef ZSIM_USE_YT
-  void skipAmountIs(uint64_t _count);
-#endif  // ZSIM_USE_YT
-  const InstInfo *nextInstruction();
+    // Attemps to open trace file. ! operator returns false if failed
+    TraceReader(const std::string & trace_file_path_);
+    TraceReader();
+
+    ~TraceReader();
+    // A constructor that fails will cause operator! to return true
+    virtual bool operator!();
+
+    // Returns next instruction from the trace file
+    virtual const InstInfo *nextInstruction();
+
+    const std::string trace_file_path;
 
  private:
-  enum class MTState {
-    INST, MEM1, MEM2
-  };
-
- private:
-  void init();
-  void traceFileIs(const std::string &_trace, TraceType _type);
-  void binaryFileIs(const std::string &_binary, uint64_t _offset);
-  void binaryGroupPathIs(const std::string &_path);
-  void clearBinaries();
-  bool initTrace();
-  bool initBinary(const std::string &_name, uint64_t _offset, uint64_t _file_offset);
-  void fillCache(uint64_t _vAddr, uint8_t _reported_size);
-  std::unique_ptr<xed_decoded_inst_t> makeNop(uint8_t _length);
-  bool locationForVAddr(uint64_t _vaddr, uint8_t **_loc, uint64_t *_size);
-  const InstInfo *nextInstructionMT();
-#ifdef ZSIM_USE_YT
-  const InstInfo *nextInstructionYT();
-#endif  // ZSIM_USE_YT
-  bool MTGetNextInstruction(InstInfo *_info, InstInfo *_prior);
-  void MTProcessInst(InstInfo *_info);
-  bool MTTypeIsMem(trace_type_t _type);
-  xed_state_t xed_state_;
-  std::string trace_;
-  TraceType trace_type_;
-  std::unordered_map<std::string, std::pair<uint8_t *, uint64_t>> binaries_;
-  bool trace_ready_;
-  bool binary_ready_;
-  std::vector<std::tuple<uint64_t, uint64_t, uint8_t *>> sections_;
-  InstInfo info_;
-  InstInfo invalid_info_;
-  std::unordered_map<uint64_t, std::tuple<int, bool, bool, bool,
-      std::unique_ptr<xed_decoded_inst_t>>> xed_map_;
-  int warn_not_found_;
-  uint64_t skipped_;
-  //--- YT
-#ifdef ZSIM_USE_YT
-  std::unique_ptr<GenericElementReader> yt_reader_;
-#endif  // ZSIM_USE_YT
-  //--- MT
-  std::unique_ptr<analyzer_t> mt_reader_;
-  reader_t *mt_iter_;
-  reader_t *mt_end_;
-  MTState mt_state_;
-  memref_t mt_ref_;
-  int mt_mem_ops_;
-  uint64_t mt_seq_;
-  uint32_t mt_prior_isize_;
-  InstInfo mt_info_a_;
-  InstInfo mt_info_b_;
-  bool mt_using_info_a_;
-  uint64_t mt_warn_target_;
 };
 
-#endif  // EXPERIMENTAL_USERS_GRANTA_TREMBLER_TREMBLER_H_
+class IntelPTReader : public TraceReader {
+    public:
+    IntelPTReader(const std::string & trace_file_path_);
+    ~IntelPTReader();
+
+    // on end of file returns invalid InstInfo
+    // parses line_buffer[next_line_index] into instr_buffer[next_instr_index]
+    // updates instr_buffer[current_instr_index] based on instr_buffer[next_instr_index]
+    // returns instr_buffer[current_instr_index]
+    // increments current_instr_index and next_instr_index
+    InstInfo * nextInstruction() override;
+
+    bool operator!() override;
+
+    unsigned long long count = 0;
+
+    private:
+
+    void parse_instr(char * line, InstInfo * out, xed_decoded_inst_t * xed_ptr);
+    char * get_next_line();
+    void make_nop(xed_decoded_inst_t * ins, uint8_t len);
+    void fill_line_buffer();
+    void test_trace_file();
+    void init_xed();
+    void init_buffers();
+    void make_custom_op();
+
+
+    static constexpr size_t buffer_size = 256;
+    static constexpr size_t line_size = 256;
+
+    //const std::string trace_file_path;
+    const std::string gunzip_command = "gunzip -c " + trace_file_path;
+
+    FILE * trace_file_ptr = NULL;
+    xed_state_t xed_state;
+
+    char line_buffer[buffer_size][line_size];
+
+    // next un parsed index in the line buffer 
+    size_t next_line_index = 0;
+    // TODO: Add caching for effeciency 
+
+    // This will contain the 
+    std::pair<InstInfo, xed_decoded_inst_t> instr_buffer[buffer_size];
+    
+    // current_instr_index + 1 this will be parsed on the next call the nextInstruction
+    size_t next_instr_index = 0;
+    // instruction to return from nextInstruction public function
+    size_t current_instr_index = 0;
+
+    unsigned long long skipped = 0;
+    bool end = false;
+
+    unsigned long long branch_count = 0;
+
+};
+
+#endif

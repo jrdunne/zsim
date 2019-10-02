@@ -43,11 +43,11 @@ def buildSim(cppFlags, dir, type, pgo=None):
        sys.exit(1)
 
     # Required paths
-    if "DRIOPATH" in os.environ:
-        DRIOPATH = os.environ["DRIOPATH"]
-    else:
-       print "ERROR: You need to define the $DRIOPATH environment variable with Xed's path"
-       sys.exit(1)
+    #if "DRIOPATH" in os.environ:
+    #    DRIOPATH = os.environ["DRIOPATH"]
+    #else:
+    #   print "ERROR: You need to define the $DRIOPATH environment variable with Xed's path"
+    #   sys.exit(1)
 
     # Required paths
     if "PINPATH" in os.environ:
@@ -83,20 +83,24 @@ def buildSim(cppFlags, dir, type, pgo=None):
        xedPath = joinpath(XEDPATH, "include/")
        xedBuildPath = joinpath(XEDPATH, "obj/")
        xedPublicPath = joinpath(XEDPATH, "include/public/xed/")
-       drPath = joinpath(DRIOPATH, "clients/drcachesim/")
-       drCommonPath = joinpath(drPath, "common/")
-       drReaderPath = joinpath(drPath, "reader/")
+       #drPath = joinpath(DRIOPATH, "clients/drcachesim/")
+       #drCommonPath = joinpath(drPath, "common/")
+       #drReaderPath = joinpath(drPath, "reader/")
     else:
 	xedPath = joinpath(PINPATH, "extras/" + xedName + "-intel64/include")
-	drPATH = ""
-	drCommonPath = ""
+	#drPATH = ""
+	#drCommonPath = ""
     if not os.path.exists(xedPath):
         xedName = "xed"
         xedPath = joinpath(PINPATH, "extras/" + xedName + "-intel64/include")
         assert os.path.exists(xedPath)
 
 
-    env["CPPPATH"] = [xedPath, xedBuildPath, xedPublicPath, drPath, drCommonPath, drReaderPath,
+    #env["CPPPATH"] = [xedPath, xedBuildPath, xedPublicPath, drPath, drCommonPath, drReaderPath,
+    #        pinInclDir, joinpath(pinInclDir, "gen"),
+    #        joinpath(PINPATH, "extras/components/include")]
+
+    env["CPPPATH"] = [xedPath, xedBuildPath, xedPublicPath,
             pinInclDir, joinpath(pinInclDir, "gen"),
             joinpath(PINPATH, "extras/components/include")]
 
@@ -127,7 +131,7 @@ def buildSim(cppFlags, dir, type, pgo=None):
         env["PINLIBPATH"] = ["/usr/lib", "/usr/lib/x86_64-linux-gnu", joinpath(PINPATH, "extras/" + xedName + "-intel64/lib"),
             joinpath(PINPATH, "intel64/lib"), joinpath(PINPATH, "intel64/lib-ext")]
     else:
-        env["PINLIBPATH"] = ["/usr/lib", "/usr/lib/x86_64-linux-gnu", joinpath(XEDPATH, "kits/xed-install-base-2017-07-18-lin-x86-64/lib")]
+        env["PINLIBPATH"] = ["/usr/lib", "/usr/lib/x86_64-linux-gnu", joinpath(XEDPATH, "kits/xed-install-base-2019-09-23-lin-x86-64/lib")]
 	
     # Libdwarf is provided in static and shared variants, Ubuntu only provides
     # static, and I don't want to add -R<pin path/intel64/lib-ext> because
@@ -150,7 +154,7 @@ def buildSim(cppFlags, dir, type, pgo=None):
     env["LIBPATH"] = []
     if TRACE:
         env["LIBPATH"] += [joinpath(XEDPATH, "obj")]
-	env["LIBPATH"] += [joinpath(DRIOPATH, "build/clients/lib64/release")]
+	#env["LIBPATH"] += [joinpath(DRIOPATH, "build/clients/lib64/release")]
     env["LIBS"] = ["config++"]
 
     env["LINKFLAGS"] = ""
@@ -190,7 +194,7 @@ def buildSim(cppFlags, dir, type, pgo=None):
     #if conf.CheckLib('hdf5') and conf.CheckLib('hdf5_hl'):
     #    env["PINLIBS"] += ["hdf5", "hdf5_hl"]
     if conf.CheckLib('hdf5_serial') and conf.CheckLib('hdf5_serial_hl'):
-    # Serial version, in Ubuntu 15.04 and later.
+        # Serial version, in Ubuntu 15.04 and later.
         env["PINLIBS"] += ["hdf5_serial", "hdf5_serial_hl"]
         env["CPPFLAGS"] += ' -DHDF5INCPREFIX="hdf5/serial/"'
     else:
