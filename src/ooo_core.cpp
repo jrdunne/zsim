@@ -328,10 +328,22 @@ inline void OOOCore::bbl(Address bblAddr, BblInfo* bblInfo) {
                     Address addr = loadAddrs[loadIdx++];
                     uint64_t reqSatisfiedCycle = l1i->load(addr, dispatchCycle, uop->pc) + L1I_LAT;
                     cRec.record(curCycle, dispatchCycle, reqSatisfiedCycle);
+                    //l1i->executePrefetch(curCycle, dispatchCycle, reqSatisfiedCycle, &cRec);
                     commitCycle = dispatchCycle + uop->lat;
                 }
                 break;
-
+            case UopType::BLOCK_PREFETCH: 
+                {
+                    // next line software prefetching?
+                    //l1i->schedulePrefetch(uop->pc + lineSize, 0);
+                    //l1i->executePrefetch(curCycle, dispatchCycle, reqSatisfiedCycle, &cRec);
+                    
+                    uint32_t lineSize = 1 << lineBits;
+                    uint64_t reqSatisfiedCycle = l1i->load(uop->pc + lineSize, dispatchCycle, 0) + L1I_LAT;
+                    cRec.record(curCycle, dispatchCycle, reqSatisfiedCycle);
+                    commitCycle = dispatchCycle + uop->lat;
+                }
+                break;
             case UopType::STORE:
                 {
                     // dispatchCycle = MAX(storeQueue.minAllocCycle(), dispatchCycle);

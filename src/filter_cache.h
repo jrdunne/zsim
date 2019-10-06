@@ -196,20 +196,20 @@ class FilterCache : public Cache {
             prefetchQueue.emplace_back(lineAddr, skip);
         }
 
-  void executePrefetch(uint64_t curCycle, uint64_t dispatchCycle, uint64_t reqSatisfiedCycle, OOOCoreRecorder *cRec) {
-    futex_lock(&filterLock);
+        void executePrefetch(uint64_t curCycle, uint64_t dispatchCycle, uint64_t reqSatisfiedCycle, OOOCoreRecorder *cRec) {
+            futex_lock(&filterLock);
             //Send out any prefetch requests that were created during the prior access
             if (unlikely(!prefetchQueue.empty())) {
                 for (auto& prefetch : prefetchQueue) {
-                  MESIState dummyState = MESIState::I;
-                  MemReq req = {0 /*No PC*/, prefetch.addr, GETS, 0, &dummyState, dispatchCycle, &filterLock, dummyState, srcId, MemReq::PREFETCH | MemReq::SPECULATIVE, prefetch.skip};
-                  uint64_t respCycle = access(req);
-                  cRec->record(curCycle, dispatchCycle, respCycle);
+                    MESIState dummyState = MESIState::I;
+                    MemReq req = {0 /*No PC*/, prefetch.addr, GETS, 0, &dummyState, dispatchCycle, &filterLock, dummyState, srcId, MemReq::PREFETCH | MemReq::SPECULATIVE, prefetch.skip};
+                    uint64_t respCycle = access(req);
+                    cRec->record(curCycle, dispatchCycle, respCycle);
                 }
                 prefetchQueue.clear();
             }
             futex_unlock(&filterLock);
-  }
+        }
 
         void contextSwitch() {
             futex_lock(&filterLock);

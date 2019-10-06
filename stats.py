@@ -1,6 +1,4 @@
 
-#!/usr/bin/pytho
-
 import h5py # presents HDF5 files as numpy arrays
 import numpy as np
 #import statistics as stats
@@ -15,7 +13,7 @@ ds = f["stats"]["root"]
 cache_types = ['l1i', 'l1d', 'l2', 'l3']
 
 print(f"{len(ds[-1]['l2']['hGETS'])} Cores")
-#print(f"{ds[-1]['l2']['hGETS']}")
+print(f"{ds[-1]['l1i'].dtype.names}")
 
 for c in cache_types:
     hits = sum(ds[-1][c]['hGETS']) + sum(ds[-1][c]['hGETX'])
@@ -23,11 +21,14 @@ for c in cache_types:
     miss = sum(ds[-1][c]['mGETS'])
     print("Sum {} cache misses : {}".format(c, miss))
 
-for k in ds[-1]['l1d'].dtype.names:
-   print(k)
+#for k in ds[-1]['l1d'].dtype.names:
+#   print(k)
 
-print(ds[-1]['l1d']['fhGETS'])
-print(ds[-1]['l1d']['fhGETX'])
+print(f" l1d filtered GETS {sum(ds[-1]['l1d']['fhGETS'])}")
+print(f" l1d filtered GETX {sum(ds[-1]['l1d']['fhGETX'])}")
+print(f" l1i filtered GETS {sum(ds[-1]['l1i']['fhGETS'])}")
+print(f" l1i filtered GETX {sum(ds[-1]['l1i']['fhGETX'])}")
+
 
 instr_count = ds[-1]["beefy"]['instrs'][0]
 cycle_count = ds[-1]["beefy"]['cycles'][0]

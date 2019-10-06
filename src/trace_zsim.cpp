@@ -177,12 +177,12 @@ struct threadInfo {
     int tid;
     std::string tracefile;
     //std::string binaries;
-    //std::string type;
+    std::string type;
 
     threadInfo() {};
 
-    threadInfo(int _tid, std::string _tracefile) :
-            tid(_tid), tracefile(_tracefile) {};
+    threadInfo(int _tid, std::string _tracefile, std::string _type) :
+            tid(_tid), tracefile(_tracefile), type(_type) {};
 
     //threadInfo(int _tid, std::string _tracefile, std::string _binaries, std::string _type) :
     //    tid(_tid), tracefile(_tracefile), binaries(_binaries), type(_type) {};
@@ -223,21 +223,17 @@ void *simtrace(void *arg) {
     int tid = ti->tid;
     std::unordered_map<uint64_t, bbl_cache_entry> bbl_cache;
 
-//     if(ti->type.compare("MEMTRACE") == 0) {
-//          type = TraceType::MEMTRACE;
-//     }
-// #ifdef ZSIM_USE_YT
-//     else if(ti->type.compare("YT") == 0) {
-//         type = TraceType::YT;
-//     }
-// #endif  // ZSIM_USE_YT
-//     else {
-//         panic("Tid %i: Unsupported trace format", tid);
-//     }
+    std::unique_ptr<TraceReader> reader_ptr; //reader(ti->tracefile);
 
-    //TraceReader reader(ti->tracefile, type, ti->binaries);
+    if(ti->type.compare("RAWPT") == 0) {
+        reader_ptr.reset(new IntelPTReader(ti->tracefile));
+    } else if(ti->type.compare("PARSEDPT") == 0) {
+        reader_ptr.reset(new ParsedIntelPTReader(ti->tracefile));
+    } else {
+        panic("Tid %i: Unsupported trace format", tid);
+    }
 
-    IntelPTReader reader(ti->tracefile);
+    auto & reader = *reader_ptr;
 
     if (!reader) {
         panic("Tid %i: Could not open input files", tid);
@@ -462,10 +458,10 @@ int main(int argc, char *argv[]) {
         if (conf.exists(p_ss.str().c_str())) {
             const char* trace = realpath(conf.get<const char*>(p_ss.str(), cwd), nullptr);
             //const char* binaries = realpath(conf.get<const char*>("trace_binaries", cwd), nullptr);
-            //const char* type = conf.get<const char*>("trace_type", cwd);
+            const char* type = conf.get<const char*>("trace_type", cwd);
             if (!trace) panic("trace file not found");
             
-            ti[i] = threadInfo((int32_t)i, std::string(trace)); // std::string(binaries), std::string(type)};
+            ti[i] = threadInfo((int32_t)i, std::string(trace), std::string(type)); // std::string(binaries), std::string(type)};
             fPtrs[i] = zinfo->cores[i]->GetFuncPtrs();
             cores[i] = zinfo->cores[i];
             threads_active++;

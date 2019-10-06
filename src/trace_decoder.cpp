@@ -1287,7 +1287,7 @@ bool Decoder::decodeCustomInstr(CustomOp cop, DynUopVec& uops) {
     bool inaccurate = false;
     switch (cop) {
         case CustomOp::PREFETCH_BLOCK: {
-            panic("REACHED CUSTOM PREFETCH BLOCK NOT IMPLIMENTED");
+            //panic("REACHED CUSTOM PREFETCH BLOCK NOT IMPLIMENTED");
             // will have an address and a number of instructions to fetch
             DynUop uop;
             uop.clear();
@@ -1296,7 +1296,7 @@ bool Decoder::decodeCustomInstr(CustomOp cop, DynUopVec& uops) {
             uop.rd[0] = 0;
             uop.rd[1] = 0;
             uop.lat = 1;
-            uop.type = UopType::LOADI;
+            uop.type = UopType::BLOCK_PREFETCH;
             uop.portMask = PORT_2;
             uops.push_back(uop);
             break;
@@ -1603,6 +1603,19 @@ BblInfo* Decoder::decodeBbl(std::vector<InstInfo> *bbl, bool oooDecoding) {
 #endif
     } else {
         bblInfo = gm_malloc<BblInfo>();
+
+        for (const auto &i : *bbl) {
+            if (!i.unknown_type) {
+                instrBytes.push_back(INS_Size(i.ins));
+            }
+            
+            // decode custom prefetch instructions 
+            if (i.custom_op == CustomOp::PREFETCH_BLOCK) {
+                 bblInfo->prefetch.addr = i.mem_addr[0];
+                 bblInfo->prefetch.size = i.mem_addr[1];
+            }
+        }
+
     }
 
     //Initialize generic part

@@ -72,7 +72,53 @@ class TraceReader {
 
     const std::string trace_file_path;
 
- private:
+    static void make_nop(xed_decoded_inst_t * ins, uint8_t len, xed_state_t * xed_state_in);
+    static void init_xed(xed_state_t * xed_state_in);
+
+  private:
+};
+
+class ParsedIntelPTReader : public TraceReader {
+  public:
+    ParsedIntelPTReader(const std::string & trace_file_path_);
+    ~ParsedIntelPTReader();
+
+    InstInfo * nextInstruction() override;
+
+    bool operator!() override;
+
+    uint64_t count = 0;
+    uint64_t branch_count = 0;
+
+    private:
+
+    void read_file();
+        
+    struct zsim_instr {
+      uint64_t pc;
+      // from here we have options to pre process the source binary and map it to a uint8_t
+      uint8_t source_binary;
+      uint8_t size;
+      // can make this 14 and use the extra byte to store the binary info
+      // will need to map lenght 15 instructions to something else
+      // Although i think there is only one len = 15 instruction
+      uint8_t insn[15];
+    };
+
+    static constexpr size_t buffer_size = 256;
+
+    xed_state_t xed_state;
+
+    // This will contain the 
+    std::pair<InstInfo, xed_decoded_inst_t> instr_buffer[buffer_size];
+    
+    // current_instr_index + 1 this will be parsed on the next call the nextInstruction
+    size_t next_instr_index = 0;
+    // instruction to return from nextInstruction public function
+    size_t current_instr_index = 0;
+
+    unsigned long long skipped = 0;
+    bool end = false;
 };
 
 class IntelPTReader : public TraceReader {
@@ -90,15 +136,13 @@ class IntelPTReader : public TraceReader {
     bool operator!() override;
 
     unsigned long long count = 0;
-
+    
     private:
 
     void parse_instr(char * line, InstInfo * out, xed_decoded_inst_t * xed_ptr);
     char * get_next_line();
-    void make_nop(xed_decoded_inst_t * ins, uint8_t len);
     void fill_line_buffer();
     void test_trace_file();
-    void init_xed();
     void init_buffers();
     void make_custom_op();
 

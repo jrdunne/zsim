@@ -32,12 +32,19 @@
 #include "g_std/g_string.h"
 #include "stats.h"
 
+struct PrefetchInfo {
+    uint64_t addr = 0;
+    uint64_t size = 0;
+};
+
 struct BblInfo {
     uint32_t instrs;
     uint32_t bytes;
     bool preserve; // Whether or not to delete oooBbl after it is used
     DynBbl oooBbl[0]; // 0 bytes, but will be 1-sized when we have an element (and that element has variable size as well)
+    PrefetchInfo prefetch;
 };
+
 
 struct CoreProperties {
     // Branch Predictor Properties, see ooo_core.h

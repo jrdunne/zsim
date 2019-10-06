@@ -9,6 +9,7 @@
 #include <fstream>
 #include <utility>
 #include <memory>
+#include <zlib.h>
 #include "wrapped_pin.h"
 // #ifdef ZSIM_USE_YT
 // #include "experimental/users/granta/yt/chunkio/xz-chunk-reader.h"
@@ -43,26 +44,58 @@ using std::string;
 static bool xed_init_done = false;
 static std::mutex xed_init_lock;
 
-
-// Indices to 'xed_map_' cached features
-static constexpr int MAP_MEMOPS = 0;
-static constexpr int MAP_UNKNOWN = 1;
-static constexpr int MAP_COND = 2;
-static constexpr int MAP_REP = 3;
-static constexpr int MAP_XED = 4;
-
 TraceReader::TraceReader() {}
 TraceReader::TraceReader(const std::string & trace_file_path_) : trace_file_path(trace_file_path_) {}
 TraceReader::~TraceReader() {}
 bool TraceReader::operator!() { return false; }
 const InstInfo *TraceReader::nextInstruction() { return nullptr; }
+
+void TraceReader::make_nop(xed_decoded_inst_t * ins, uint8_t len, xed_state_t * xed_state_in) {
+    // A 10-to-15-byte NOP instruction (direct XED support is only up to 9)
+    static const char *nop15 =
+      "\x66\x66\x66\x66\x66\x66\x2e\x0f\x1f\x84\x00\x00\x00\x00\x00";
+
+    xed_decoded_inst_zero_set_mode(ins, xed_state_in);
+    xed_error_enum_t res;
+
+    // The reported instruction length must be 1-15 bytes
+    len &= 0xf;
+    assert(len > 0);
+    if (len > 9) {
+        int offset = 15 - len;
+        const uint8_t *pos = reinterpret_cast<const uint8_t *>(nop15 + offset);
+        res = xed_decode(ins, pos, 15 - offset);
+    } else {
+        uint8_t buf[10];
+        res = xed_encode_nop(&buf[0], len);
+        if (res != XED_ERROR_NONE) {
+        warn("XED NOP encode error: %s", xed_error_enum_t2str(res));
+        }
+        res = xed_decode(ins, buf, sizeof(buf));
+    }
+    if (res != XED_ERROR_NONE) {
+        warn("XED NOP decode error: %s", xed_error_enum_t2str(res));
+    }
+}
+
+void TraceReader::init_xed(xed_state_t * xed_state_in) {
+    // only init the tables once
+    std::unique_lock<std::mutex> xed_lock(xed_init_lock);
+    if (!xed_init_done) {
+        xed_tables_init();
+        xed_init_done = true;
+    }
+    // Set the XED machine mode to 64-bit
+    xed_state_init2(xed_state_in, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+}
+
 ////////////////////////////////////////////////
 // IntelPTReader 
 ////////////////////////////////////////////////
 
 IntelPTReader::IntelPTReader(const std::string & trace_file_path_) : TraceReader(trace_file_path_) {
     test_trace_file();
-    init_xed();
+    init_xed(&xed_state);
     init_buffers();
 }
 
@@ -78,8 +111,8 @@ InstInfo * IntelPTReader::nextInstruction() {
     // update instr_buffer[current_] with info from next instruction
     // 
 
-    if (count % 1000000 == 0) {
-        // inster custom op
+    if (count % 100000 == 0) {
+        make_custom_op();
     } else {
         parse_instr(get_next_line(), &instr_buffer[next_instr_index].first, &instr_buffer[next_instr_index].second);
     }
@@ -109,28 +142,35 @@ void IntelPTReader::make_custom_op() {
     // ++next_instr_index and ++current_instr_index
     //--instr_buffer[next_instr_index].first;
 
-    make_nop(&instr_buffer[next_instr_index].second, xed_decoded_inst_get_length(&instr_buffer[next_instr_index].second));
+    //  set length of prefetch opcode to 6
+    make_nop(&instr_buffer[next_instr_index].second, 6, &xed_state);
 
+    // dummy values for now
+    //instr_buffer[next_instr_index].mem_addr[0] = instr_buffer[current_instr_index].pc + 10; // Addr to prefetch to
+    // instr_buffer[next_instr_index].mem_addr[1] = 1; // size of prefetch in cache lines?
 
     instr_buffer[next_instr_index].first.taken = false;
-    instr_buffer[next_instr_index].first.pc = 0; // can be reused for fetching size maybe?
+    instr_buffer[next_instr_index].first.pc = instr_buffer[current_instr_index].first.pc;
+    instr_buffer[next_instr_index].first.mem_addr[0] = instr_buffer[current_instr_index].first.pc;// address to load
+    instr_buffer[next_instr_index].first.mem_addr[1] = 1;// number of lines to load
     instr_buffer[next_instr_index].first.target = 0;
-    instr_buffer[next_instr_index].first.unknown_type = true;
+    instr_buffer[next_instr_index].first.unknown_type = false;
     instr_buffer[next_instr_index].first.valid = true;
     instr_buffer[next_instr_index].first.custom_op = CustomOp::PREFETCH_BLOCK;
+    ++count;
 }
 
 void IntelPTReader::fill_line_buffer() {
-    int count = 0;
-    while(fgets(line_buffer[count], line_size, trace_file_ptr) != NULL) {
-        ++count;
-        if (count == buffer_size) break;
+    int mcount = 0;
+    while(fgets(line_buffer[mcount], line_size, trace_file_ptr) != NULL) {
+        ++mcount;
+        if (mcount == buffer_size) break;
     }
     // got to the end of the file and could not fill the buffer
     // mark end line as the end so we can mark the InstrInfo as invalid and end 
     // the simulation
-    if (unlikely(count != buffer_size)) {
-        line_buffer[count][0] = '!';
+    if (unlikely(mcount != buffer_size)) {
+        line_buffer[mcount][0] = '!';
         pclose(trace_file_ptr);
         trace_file_ptr = NULL;
     }
@@ -218,7 +258,7 @@ void IntelPTReader::parse_instr(char * line, InstInfo * out, xed_decoded_inst_t 
     if (xed_ptr->_inst == 0x0 || xed_decoded_inst_get_iclass(xed_ptr) == XED_ICLASS_IRETQ) {
         ++skipped;
         if (skipped > 10000) panic("Skipped over 10000 instructions");
-        make_nop(xed_ptr, ilen);
+        make_nop(xed_ptr, ilen, &xed_state);
     }
 
     out->unknown_type = (xed_error != XED_ERROR_NONE);
@@ -258,17 +298,6 @@ void IntelPTReader::test_trace_file() {
     }
 }
 
-void IntelPTReader::init_xed() {
-    // only init the tables once
-    std::unique_lock<std::mutex> xed_lock(xed_init_lock);
-    if (!xed_init_done) {
-        xed_tables_init();
-        xed_init_done = true;
-    }
-    // Set the XED machine mode to 64-bit
-    xed_state_init2(&xed_state, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
-}
-
 void IntelPTReader::init_buffers() {
     if (trace_file_ptr == NULL) {
         panic("Trace file invalid after successful initialization");
@@ -286,30 +315,48 @@ void IntelPTReader::init_buffers() {
     ++next_line_index;
 }
 
-void IntelPTReader::make_nop(xed_decoded_inst_t * ins, uint8_t len) {
-    // A 10-to-15-byte NOP instruction (direct XED support is only up to 9)
-    static const char *nop15 =
-      "\x66\x66\x66\x66\x66\x66\x2e\x0f\x1f\x84\x00\x00\x00\x00\x00";
+////////////////////////////////////////////////
+// ParsedIntelPTReader 
+////////////////////////////////////////////////
 
-    xed_decoded_inst_zero_set_mode(ins, &xed_state);
-    xed_error_enum_t res;
+ParsedIntelPTReader::ParsedIntelPTReader(const std::string & trace_file_path_) {
+    init_xed(&xed_state);
+    read_file();
+}
 
-    // The reported instruction length must be 1-15 bytes
-    len &= 0xf;
-    assert(len > 0);
-    if (len > 9) {
-        int offset = 15 - len;
-        const uint8_t *pos = reinterpret_cast<const uint8_t *>(nop15 + offset);
-        res = xed_decode(ins, pos, 15 - offset);
-    } else {
-        uint8_t buf[10];
-        res = xed_encode_nop(&buf[0], len);
-        if (res != XED_ERROR_NONE) {
-        warn("XED NOP encode error: %s", xed_error_enum_t2str(res));
-        }
-        res = xed_decode(ins, buf, sizeof(buf));
+ParsedIntelPTReader::~ParsedIntelPTReader() {}
+
+
+bool ParsedIntelPTReader::operator!() {
+    return false; 
+}
+
+InstInfo *ParsedIntelPTReader::nextInstruction() {
+    return nullptr; 
+}
+
+// per page size 4096 
+// max decompression from compresseed page is 
+// NOTE open with 'rb' for read binary. Does this matter for mmap?
+void ParsedIntelPTReader::read_file() {
+    struct stat statbuf;
+    void * src;
+    int fdin;
+
+    /* open the input file */
+    if ((fdin = open (trace_file_path.c_str(), O_RDONLY)) < 0) {
+        panic("can't open %s for reading", trace_file_path.c_str());
     }
-    if (res != XED_ERROR_NONE) {
-        warn("XED NOP decode error: %s", xed_error_enum_t2str(res));
+
+    /* find size of input file */
+    if (fstat (fdin, &statbuf) < 0) {
+        panic("fstat error");
     }
+
+    /* mmap the input file */
+    if ((src = mmap (0, statbuf.st_size, PROT_READ, MAP_SHARED | MAP_POPULATE, fdin, 0)) == (caddr_t) -1) {
+        panic("mmap error for input");
+    }
+
+   munmap(src, statbuf.st_size);
 }

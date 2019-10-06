@@ -60,7 +60,17 @@ void SimpleCore::bbl(Address bblAddr, BblInfo* bblInfo) {
     //info("BBL %s %p", name.c_str(), bblInfo);
     //info("%d %d", bblInfo->instrs, bblInfo->bytes);
     instrs += bblInfo->instrs;
-    curCycle += bblInfo->instrs;
+    curCycle += bblInfo->instrs; // One cycle per instruction + latency for store
+
+    // TODO: how many cycles should i add for a prefetch?
+    // currently only 1 for the instruction, but none for the load. acts async
+    if (bblInfo->prefetch.size != 0){
+        for (size_t i = 0; i < bblInfo->prefetch.size; ++i){
+            // ignores the latency of this op. it will still have latency
+            // for the next access as availiable cycle will be updated in the filter cache
+            l1i->load(bblInfo->prefetch.addr + (1 << lineBits) * i, curCycle, 0);
+        }
+    }
 
     Address endBblAddr = bblAddr + bblInfo->bytes;
     for (Address fetchAddr = bblAddr; fetchAddr < endBblAddr; fetchAddr+=(1 << lineBits)) {
