@@ -32,6 +32,7 @@
 #include <unordered_map>
 #include <string>
 #include <stdio.h>
+#include <zlib.h>
 
 extern "C" {
 #include "public/xed/xed-interface.h"
@@ -55,6 +56,7 @@ struct InstInfo {
   bool taken;                     // branch taken
   bool unknown_type;              // No available decode info (presents a nop)
   bool valid;                     // True until the end of the sequence
+  xed_category_enum_t cat;
 };
 
 class TraceReader {
@@ -71,6 +73,9 @@ class TraceReader {
     virtual const InstInfo *nextInstruction();
 
     const std::string trace_file_path;
+    unsigned long long count = 0;
+    unsigned long long branch_count = 0;
+    unsigned long long skipped = 0;
 
     static void make_nop(xed_decoded_inst_t * ins, uint8_t len, xed_state_t * xed_state_in);
     static void init_xed(xed_state_t * xed_state_in);
@@ -87,14 +92,14 @@ class ParsedIntelPTReader : public TraceReader {
 
     bool operator!() override;
 
-    uint64_t count = 0;
-    uint64_t branch_count = 0;
-
     private:
 
-    void read_file();
+    void open_gz_file();
+    void init_buffer();
+    void read_next_instr();
+    void set_branch_taken(InstInfo & current, const InstInfo & next);
         
-    struct zsim_instr {
+    typedef struct zsim_instr {
       uint64_t pc;
       // from here we have options to pre process the source binary and map it to a uint8_t
       uint8_t source_binary;
@@ -103,9 +108,17 @@ class ParsedIntelPTReader : public TraceReader {
       // will need to map lenght 15 instructions to something else
       // Although i think there is only one len = 15 instruction
       uint8_t insn[15];
-    };
+    } zsim_instr;
 
-    static constexpr size_t buffer_size = 256;
+    static constexpr size_t buffer_size = 32;
+
+    gzFile input_gz = NULL;
+
+    static constexpr size_t instr_size = sizeof(zsim_instr);
+
+    zsim_instr instr;
+    // 1MiB
+    static constexpr size_t gz_buffer_size = 1048576;
 
     xed_state_t xed_state;
 
@@ -117,7 +130,6 @@ class ParsedIntelPTReader : public TraceReader {
     // instruction to return from nextInstruction public function
     size_t current_instr_index = 0;
 
-    unsigned long long skipped = 0;
     bool end = false;
 };
 
@@ -135,8 +147,6 @@ class IntelPTReader : public TraceReader {
 
     bool operator!() override;
 
-    unsigned long long count = 0;
-    
     private:
 
     void parse_instr(char * line, InstInfo * out, xed_decoded_inst_t * xed_ptr);
@@ -170,10 +180,7 @@ class IntelPTReader : public TraceReader {
     // instruction to return from nextInstruction public function
     size_t current_instr_index = 0;
 
-    unsigned long long skipped = 0;
     bool end = false;
-
-    unsigned long long branch_count = 0;
 
 };
 

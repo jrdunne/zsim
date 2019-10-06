@@ -1,44 +1,11 @@
 #include "trace_reader.h"
 #include <cstring>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <algorithm>
-#include <fstream>
-#include <utility>
 #include <memory>
-#include <zlib.h>
+#include <iostream>
 #include "wrapped_pin.h"
-// #ifdef ZSIM_USE_YT
-// #include "experimental/users/granta/yt/chunkio/xz-chunk-reader.h"
-// #include "experimental/users/granta/yt/element-reader.h"
-// #endif  // ZSIM_USE_YT
-//#include "elf.h"
 #include "log.h"
 
-
 #define XC(cat) (XED_CATEGORY_##cat)
-
-//analyzer_t is linked via a static lib which creates problems with the zsim shared library
-//I think it can be fixed by building a memtrace analzyer shared lib or by ?
-//#include "/home/hlitz/dynamorio/clients/drcachesim/analyzer.cpp"
-
-// Remove and include <memory> when using C++14 or later
-// template<typename T, typename... Args>
-// static std::unique_ptr<T> make_unique(Args&&... args) {
-//   return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-// }
-
-// using std::get;
-// using std::ifstream;
-// using std::ignore;
-// using std::make_pair;
-// using std::tie;
-// using std::unique_ptr;
-// using std::make_unique;
-// using std::make_tuple;
 using std::string;
 
 static bool xed_init_done = false;
@@ -111,11 +78,11 @@ InstInfo * IntelPTReader::nextInstruction() {
     // update instr_buffer[current_] with info from next instruction
     // 
 
-    if (count % 100000 == 0) {
-        make_custom_op();
-    } else {
+    //if (count % 100000 == 0) {
+    //    make_custom_op();
+    //} else {
         parse_instr(get_next_line(), &instr_buffer[next_instr_index].first, &instr_buffer[next_instr_index].second);
-    }
+    //}
 
 
 
@@ -190,7 +157,7 @@ void IntelPTReader::parse_instr(char * line, InstInfo * out, xed_decoded_inst_t 
     // last line that is read is marked as !. can be an error
     if (unlikely(end || line[0] == '!')) {
         end = true;
-        printf("Number of branches taken %llu number of total instrs %llu", branch_count, count);
+        //printf("Number of branches taken %llu number of total instrs %llu", branch_count, count);
         memset(out, 0, sizeof(InstInfo));
         return;
     }
@@ -213,6 +180,7 @@ void IntelPTReader::parse_instr(char * line, InstInfo * out, xed_decoded_inst_t 
     // skip leading whitespace
     while (iter != end && *iter == ' ') ++iter;
     assert(iter < end);
+    iter += 5; // skip pid = [000]
 
     // get PC
     begin = iter;
@@ -273,17 +241,17 @@ void IntelPTReader::parse_instr(char * line, InstInfo * out, xed_decoded_inst_t 
     out->custom_op = CustomOp::NONE;
 
 
-    static const xed_operand_enum_t mems[2] = {XED_OPERAND_MEM0, XED_OPERAND_MEM1};
+    // static const xed_operand_enum_t mems[2] = {XED_OPERAND_MEM0, XED_OPERAND_MEM1};
 
-    for (size_t op = 0; op < xed_decoded_inst_number_of_memory_operands(xed_ptr); ++op) {
-        if (xed_decoded_inst_mem_written(xed_ptr, op) || xed_decoded_inst_mem_read(xed_ptr, op)) {
-            out->mem_addr[op] = xed_decoded_inst_get_reg(xed_ptr, mems[op]); //xed_decoded_inst_operand_elements(xed_ptr, op);
-            out->mem_used[op] = true;
-        }
-    }
+    // for (size_t op = 0; op < xed_decoded_inst_number_of_memory_operands(xed_ptr); ++op) {
+    //     if (xed_decoded_inst_mem_written(xed_ptr, op) || xed_decoded_inst_mem_read(xed_ptr, op)) {
+    //         out->mem_addr[op] = xed_decoded_inst_get_reg(xed_ptr, mems[op]); //xed_decoded_inst_operand_elements(xed_ptr, op);
+    //         out->mem_used[op] = true;
+    //     }
+    // }
 
-    xed_category_enum_t cat = (xed_category_enum_t) INS_Category(xed_ptr);
-    if (cat == XC(COND_BR) || cat == XC(UNCOND_BR)) {
+    out->cat = (xed_category_enum_t) INS_Category(xed_ptr);
+    if (out->cat == XED_CATEGORY_COND_BR || out->cat == XED_CATEGORY_UNCOND_BR) {
         ++branch_count;
     }
 
@@ -319,44 +287,140 @@ void IntelPTReader::init_buffers() {
 // ParsedIntelPTReader 
 ////////////////////////////////////////////////
 
-ParsedIntelPTReader::ParsedIntelPTReader(const std::string & trace_file_path_) {
+ParsedIntelPTReader::ParsedIntelPTReader(const std::string & trace_file_path_) : TraceReader(trace_file_path_) {
     init_xed(&xed_state);
-    read_file();
+    open_gz_file();
+    init_buffer();
+
+    // init current and next to instructions
+    read_next_instr();
+    ++next_instr_index;
+    read_next_instr();
+    set_branch_taken(instr_buffer[current_instr_index].first, instr_buffer[next_instr_index].first);
+
 }
 
-ParsedIntelPTReader::~ParsedIntelPTReader() {}
+ParsedIntelPTReader::~ParsedIntelPTReader() {
+    gzclose(input_gz);
+}
 
 
 bool ParsedIntelPTReader::operator!() {
-    return false; 
+    return input_gz == NULL;
 }
 
 InstInfo *ParsedIntelPTReader::nextInstruction() {
-    return nullptr; 
+
+    auto to_return = current_instr_index;
+    current_instr_index = next_instr_index;
+
+    // update next instruction index to be filled by read_next_instr()
+    ++next_instr_index;
+    if (next_instr_index == buffer_size) {
+        next_instr_index = 0;
+    }
+    
+    // parse new instr into next_instr_index
+    read_next_instr();
+
+    set_branch_taken(instr_buffer[to_return].first, instr_buffer[current_instr_index].first);
+
+    return &instr_buffer[to_return].first; 
 }
 
-// per page size 4096 
-// max decompression from compresseed page is 
-// NOTE open with 'rb' for read binary. Does this matter for mmap?
-void ParsedIntelPTReader::read_file() {
-    struct stat statbuf;
-    void * src;
-    int fdin;
 
-    /* open the input file */
-    if ((fdin = open (trace_file_path.c_str(), O_RDONLY)) < 0) {
-        panic("can't open %s for reading", trace_file_path.c_str());
+void ParsedIntelPTReader::open_gz_file() {
+    input_gz = gzopen(trace_file_path.c_str(), "rb");
+    if (input_gz == NULL) {
+        panic("Trace file not found %s", trace_file_path.c_str());
+    }
+    if (gzbuffer(input_gz, gz_buffer_size) == -1) {
+        panic("Failed to set buffer size to %zu", gz_buffer_size);
+    }
+}
+
+void ParsedIntelPTReader::set_branch_taken(InstInfo & current, const InstInfo & next){
+    if (next.pc != current.pc + 1){
+        current.taken = true;
+    }
+}
+
+void ParsedIntelPTReader::init_buffer() {
+    for (size_t i = 0; i < buffer_size; ++i){
+        xed_decoded_inst_zero_set_mode(&instr_buffer[i].second, &xed_state);
+        instr_buffer[i].first.pc = 0;
+        instr_buffer[i].first.ins = &instr_buffer[i].second;
+        instr_buffer[i].first.tid = 0;
+        instr_buffer[i].first.pid = 0;
+        instr_buffer[i].first.unknown_type = false;
+        instr_buffer[i].first.target = 0;
+        instr_buffer[i].first.taken = false;
+        instr_buffer[i].first.valid = true;
+        instr_buffer[i].first.mem_addr[0] = 0;
+        instr_buffer[i].first.mem_addr[1] = 0;
+        instr_buffer[i].first.mem_used[0] = false;
+        instr_buffer[i].first.mem_used[1] = false;
+        instr_buffer[i].first.custom_op = CustomOp::NONE;
+    }
+}
+
+void ParsedIntelPTReader::read_next_instr() {
+    if (end) {
+        //printf("Number of branches taken %llu number of total instrs %llu", branch_count, count);
+        memset(&instr_buffer[next_instr_index].first, 0, sizeof(InstInfo));
+        return;
     }
 
-    /* find size of input file */
-    if (fstat (fdin, &statbuf) < 0) {
-        panic("fstat error");
+    int res = gzread(input_gz, &instr, instr_size);
+    if (res != static_cast<int>(instr_size)) {
+        end = true;
+        memset(&instr_buffer[next_instr_index].first, 0, sizeof(InstInfo));
+        return;
     }
 
-    /* mmap the input file */
-    if ((src = mmap (0, statbuf.st_size, PROT_READ, MAP_SHARED | MAP_POPULATE, fdin, 0)) == (caddr_t) -1) {
-        panic("mmap error for input");
-    }
+    // std::cout << std::hex << instr.pc << " " << instr.size << " ";
+    // for (size_t i = 0; i < instr.size; ++i){
+    //     std::cout << std::hex << static_cast<uint16_t>(instr.insn[i]) << " ";
+    // }
+    // std::cout << std::endl;
 
-   munmap(src, statbuf.st_size);
+    auto & out = instr_buffer[next_instr_index].first;
+    auto * xed_ptr = &instr_buffer[next_instr_index].second;
+
+    out.pc = instr.pc;
+    out.taken = false;
+
+    // TODO: UNUSED at this point/constant 
+    //out.ins = xed_ptr;
+    //out.tid = 0;
+    //out.pid = 0;
+    //out.valid = true;
+    //out.mem_addr[0] = 0;
+    //out.mem_addr[1] = 0;
+    //out.mem_used[0] = false;
+    //out.mem_used[1] = false;
+    //out.custom_op = CustomOp::NONE;
+
+    xed_error_enum_t xed_error;
+    xed_decoded_inst_zero_set_mode(xed_ptr, &xed_state);
+
+    xed_error = xed_decode(xed_ptr, 
+                XED_STATIC_CAST(const xed_uint8_t*, instr.insn),
+                instr.size);
+
+    // unsupported instruction  trace_decoder.cpp:189
+    ++count;
+    // if (xed_ptr->_inst == 0x0 || xed_decoded_inst_get_iclass(xed_ptr) == XED_ICLASS_IRETQ) {
+    //     ++skipped;
+    //     if (skipped > 10000) panic("Skipped over 10000 instructions");
+    //     make_nop(xed_ptr, instr.size, &xed_state);
+    // }
+
+    out.unknown_type = (xed_error != XED_ERROR_NONE);
+    out.target = xed_decoded_inst_get_branch_displacement(xed_ptr) + out.pc;
+
+    out.cat = (xed_category_enum_t) INS_Category(xed_ptr);
+    if (out.cat == XC(COND_BR) || out.cat == XC(UNCOND_BR)) {
+        ++branch_count;
+    }
 }

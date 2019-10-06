@@ -40,14 +40,8 @@ void parse_failure(char * buffer, const size_t size){
     exit(1);
 }
 
-//stringstream ss;
 
 void parse_instr(char * buffer, const size_t size, gzFile out_ptr) {
-    //ss.rdbuf()->pubsetbuf(buffer, size);
-
-    char d;
-    string delims;
-    string binary;
     struct zsim_instr instr;
     memset(&instr, 0, sizeof(instr));
 
@@ -79,7 +73,7 @@ void parse_instr(char * buffer, const size_t size, gzFile out_ptr) {
     begin = (iter += 6); // skip ilen: to next space
     assert(iter < end && *iter == ' ');
     instr.size = strtoul(begin, &iter, 10);
-    assert(instr.size != 0 && instr.size < 15);
+    assert(instr.size != 0 && instr.size < 16);
 
     //skip insn:
     begin = (iter += 6);
@@ -89,41 +83,6 @@ void parse_instr(char * buffer, const size_t size, gzFile out_ptr) {
         begin = iter;
         instr.insn[i] = strtoul(begin, &iter, 16);
     }
-
-    /*
-    // ss >> delims;
-    // //ss >> d >> std::dec >> instr.pid >> d;
-    // if (!ss.good()) parse_failure(buffer, size);
-
-    // ss >> std::hex >> instr.pc;
-    // if (!ss.good()) parse_failure(buffer, size);
-
-    // ss >> binary;
-    // if (!ss.good()) parse_failure(buffer, size);
-
-    // ss >> delims;
-    // if (!ss.good()) parse_failure(buffer, size);
-
-    // uint32_t temp_size;
-    // ss >> std::dec >> temp_size;
-    // if (temp_size > 255) parse_failure(buffer, size);
-    // instr.size = static_cast<uint8_t>(temp_size);
-
-    // if (!ss.good()) parse_failure(buffer, size);
-
-    // ss >> delims;
-    // if (!ss.good()) parse_failure(buffer, size);
-
-    // for (uint32_t i = 0; i < temp_size; ++i){
-    //     uint32_t insn_temp;
-    //     ss >> std::hex >> insn_temp;
-    //     if (insn_temp > 255) parse_failure(buffer, size);
-    //     instr.insn[i] = static_cast<uint8_t>(insn_temp);
-
-    //     if (!ss.good()) parse_failure(buffer, size);
-    // }
-
-    */
 
     if (gzwrite(out_ptr, &instr, sizeof(zsim_instr)) == 0){
         cerr << "writing failed" << endl;
@@ -143,7 +102,17 @@ int64_t parse_file(const string & input, const string & output) {
         cerr << "failed to open files" << endl;
         exit(1);
     }
-    
+
+    if (gzbuffer(file_ptr, 131072) == -1) {
+        cerr << "input buffer failed to set" << endl;
+        exit(1);
+    }
+
+    if (gzbuffer(out_ptr, 131072) == -1) {
+        cerr << "output buffer failed to set" << endl;
+        exit(1);
+    }
+
     int64_t count = 0;
     while(gzgets(file_ptr, buffer, line_size) != Z_NULL) {
         ++count;

@@ -350,7 +350,7 @@ void *simtrace(void *arg) {
                     sim_mem_op(tid, &info);
                 }
                 if (likely(info.custom_op == CustomOp::NONE)) {
-                    if (INS_Category(info.ins) == XED_CATEGORY_COND_BR) {
+                    if (info.cat == XED_CATEGORY_COND_BR) {
                         uint64_t fall_through_addr = bbl_pc + ce.size_bytes;
                         fPtrs[tid].branchPtr(tid, it->pc, it->taken, it->target, fall_through_addr);
                     }
@@ -379,7 +379,7 @@ void *simtrace(void *arg) {
                 }
 
                 if (likely(insi->custom_op == CustomOp::NONE)) {
-                    if (INS_Category(insi->ins) == XED_CATEGORY_COND_BR) {
+                    if (insi->cat == XED_CATEGORY_COND_BR) {
                         uint64_t fall_through_addr = bbl_to_sim->first + size_bytes;
                         //Check that the branch is the last instruction of the BBL
                         assert(i + 1 == bbl_to_sim->second.nr_inst);
@@ -399,6 +399,8 @@ void *simtrace(void *arg) {
 
     info("Tid: %i finished. Instruction trace size: %lu. Skipped instructions due to unavailable symbols: %lu. BBLs in trace: %lu, dropped BBLs due to context switches: %lu",
          tid, sim_inst, unknown_instrs, simulated_bbls, interrupted_bbls);
+
+    info("Total from reader: %llu Branch count: %llu Reader Skipped count: %llu", reader.count, reader.branch_count, reader.skipped);
 
     return wait_for_threads_and_exit(tid);
 }
