@@ -104,7 +104,7 @@ PostPatchFn PatchBind(PrePatchArgs args) {
     }
 }
 
-PostPatchFn PatchGetsockname(PrePatchArgs args) {
+PostPatchFn Patc!ockname(PrePatchArgs args) {
     return [](PostPatchArgs args) {
         CONTEXT* ctxt = args.ctxt;
         SYSCALL_STANDARD std = args.std;

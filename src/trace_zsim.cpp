@@ -191,19 +191,26 @@ struct threadInfo {
 void sim_mem_op(uint32_t tid, const InstInfo *insi) {
     if (!INS_Nop(insi->ins) && !INS_LEA(insi->ins)) { //NOPs and LEA never access memory
         for (uint32_t op = 0; op < xed_decoded_inst_number_of_memory_operands(insi->ins); op++) {
-            //predicated true ld/st are handled just as regular ld/st
-            if(xed_decoded_inst_mem_read(insi->ins, op) && !insi->mem_used[op]) {
-                fPtrs[tid].predLoadPtr(tid, insi->mem_addr[op], insi->pc, false);
-            }
-            else if(xed_decoded_inst_mem_read(insi->ins, op)) {
+            // No current support for predicated
+            if(xed_decoded_inst_mem_read(insi->ins, op)) {
                 fPtrs[tid].loadPtr(tid, insi->mem_addr[op], insi->pc);
             }
-            if(xed_decoded_inst_mem_written(insi->ins, op) && !insi->mem_used[op]) {
-                fPtrs[tid].predStorePtr(tid, insi->mem_addr[op], insi->pc, false);
-            }
-            else if(xed_decoded_inst_mem_written(insi->ins, op)) {
+            if(xed_decoded_inst_mem_written(insi->ins, op)) {
                 fPtrs[tid].storePtr(tid, insi->mem_addr[op], insi->pc);
             }
+            //predicated true ld/st are handled just as regular ld/st
+            // if(xed_decoded_inst_mem_read(insi->ins, op) && !insi->mem_used[op]) {
+            //     fPtrs[tid].predLoadPtr(tid, insi->mem_addr[op], insi->pc, false);
+            // }
+            // else if(xed_decoded_inst_mem_read(insi->ins, op)) {
+            //     fPtrs[tid].loadPtr(tid, insi->mem_addr[op], insi->pc);
+            // }
+            // if(xed_decoded_inst_mem_written(insi->ins, op) && !insi->mem_used[op]) {
+            //     fPtrs[tid].predStorePtr(tid, insi->mem_addr[op], insi->pc, false);
+            // }
+            // else if(xed_decoded_inst_mem_written(insi->ins, op)) {
+            //     fPtrs[tid].storePtr(tid, insi->mem_addr[op], insi->pc);
+            // }
         }
     }
 }

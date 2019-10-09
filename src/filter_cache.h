@@ -61,6 +61,9 @@ class FilterCache : public Cache {
 
         lock_t filterLock;
         uint64_t fGETSHit, fGETXHit;
+        uint64_t fGETM; // cache misses
+        uint64_t fGETMLat; // latency added 
+
 
         struct PrefetchInfo {
             Address addr;
@@ -83,6 +86,7 @@ class FilterCache : public Cache {
             fGETSHit = fGETXHit = 0;
             srcId = -1;
             reqFlags = 0;
+            fGETM = fGETMLat = 0;
         }
 
         void setSourceId(uint32_t id) {
@@ -117,6 +121,15 @@ class FilterCache : public Cache {
             fgetsStat->init("fhGETS", "Filtered GETS hits", &fGETSHit);
             ProxyStat* fgetxStat = new ProxyStat();
             fgetxStat->init("fhGETX", "Filtered GETX hits", &fGETXHit);
+
+            ProxyStat* fgetmStat = new ProxyStat();
+            fgetmStat->init("fmGET", "Filtered GET Misses", &fGETM);
+            ProxyStat* fgetmlatStat = new ProxyStat();
+            fgetmlatStat->init("fmGETLat", "Filtered GET Misses latency", &fGETMLat);
+            
+            cacheStat->append(fgetmStat);
+            cacheStat->append(fgetmlatStat);
+
             cacheStat->append(fgetsStat);
             cacheStat->append(fgetxStat);
 
@@ -129,7 +142,11 @@ class FilterCache : public Cache {
             uint32_t idx = vLineAddr & setMask;
             uint64_t availCycle = filterArray[idx].availCycle; //read before, careful with ordering to avoid timing races
             if (vLineAddr == filterArray[idx].rdAddr) {
-                fGETSHit++;
+                // if (availCycle <= curCycle) fGETSHit++;
+                // else {
+                //     fGETM++;
+                //     fGETMLat += availCycle - curCycle;
+                // }
                 return MAX(curCycle, availCycle);
             } else {
                 return replace(vLineAddr, idx, true, curCycle, pc);
@@ -141,7 +158,11 @@ class FilterCache : public Cache {
             uint32_t idx = vLineAddr & setMask;
             uint64_t availCycle = filterArray[idx].availCycle; //read before, careful with ordering to avoid timing races
             if (vLineAddr == filterArray[idx].wrAddr) {
-                fGETXHit++;
+                // if (availCycle <= curCycle) fGETXHit++;
+                // else {
+                //     fGETM++;
+                //     fGETMLat += availCycle - curCycle;
+                // }
                 //NOTE: Stores don't modify availCycle; we'll catch matches in the core
                 //filterArray[idx].availCycle = curCycle; //do optimistic store-load forwarding
                 return MAX(curCycle, availCycle);

@@ -389,6 +389,8 @@ void ParsedIntelPTReader::read_next_instr() {
 
     out.pc = instr.pc;
     out.taken = false;
+    out.mem_used[0] = false;
+    out.mem_used[1] = false;
 
     // TODO: UNUSED at this point/constant 
     //out.ins = xed_ptr;
@@ -422,5 +424,11 @@ void ParsedIntelPTReader::read_next_instr() {
     out.cat = (xed_category_enum_t) INS_Category(xed_ptr);
     if (out.cat == XC(COND_BR) || out.cat == XC(UNCOND_BR)) {
         ++branch_count;
+    }
+
+    for (size_t op = 0; op < xed_decoded_inst_number_of_memory_operands(xed_ptr); ++op) {
+        if (xed_decoded_inst_mem_written(xed_ptr, op) || xed_decoded_inst_mem_read(xed_ptr, op)) {
+            out.mem_used[op] = true;
+        }
     }
 }
