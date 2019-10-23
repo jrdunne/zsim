@@ -363,6 +363,7 @@ void *simtrace(void *arg) {
                     }
                 }
             }
+            if (!cache_bbl) gm_free(ce.bbl);
         }
         else { //Bbl is cached
             uint32_t size_bytes = bbl_to_sim->second.size_bytes;
@@ -402,13 +403,23 @@ void *simtrace(void *arg) {
                 }
             }
         }
+        if (bbl_cache.size() > 10000000) {
+            for (auto & i: bbl_cache) {
+                gm_free(i.second.bbl);
+            }
+            bbl_cache.clear();
+        }
+    }
+    for (auto & i: bbl_cache) {
+        gm_free(i.second.bbl);
     }
 
     info("Tid: %i finished. Instruction trace size: %lu. Skipped instructions due to unavailable symbols: %lu. BBLs in trace: %lu, dropped BBLs due to context switches: %lu",
          tid, sim_inst, unknown_instrs, simulated_bbls, interrupted_bbls);
 
     info("Total from reader: %llu Branch count: %llu Reader Skipped count: %llu", reader.count, reader.branch_count, reader.skipped);
-
+    
+    reader_ptr.reset();
     return wait_for_threads_and_exit(tid);
 }
 

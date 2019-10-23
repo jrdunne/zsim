@@ -1,0 +1,5 @@
+
+for (( i=0 ; i<80; ++i))
+do
+echo trace$i = \"/home/jrdunne/git-repos/standford-mast-zsim/traces/dotty/$i.perf.jit.txt.trc\"\;
+done

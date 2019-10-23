@@ -391,6 +391,7 @@ void ParsedIntelPTReader::read_next_instr() {
     out.taken = false;
     out.mem_used[0] = false;
     out.mem_used[1] = false;
+    out.cat = (xed_category_enum_t)0;
 
     // TODO: UNUSED at this point/constant 
     //out.ins = xed_ptr;
@@ -418,8 +419,13 @@ void ParsedIntelPTReader::read_next_instr() {
     //     make_nop(xed_ptr, instr.size, &xed_state);
     // }
 
-    out.unknown_type = (xed_error != XED_ERROR_NONE);
     out.target = xed_decoded_inst_get_branch_displacement(xed_ptr) + out.pc;
+
+    if (xed_ptr->_inst == 0x0) {
+        ++skipped;
+        make_nop(xed_ptr, instr.size, &xed_state);
+    }
+    out.unknown_type = (xed_error != XED_ERROR_NONE);
 
     out.cat = (xed_category_enum_t) INS_Category(xed_ptr);
     if (out.cat == XC(COND_BR) || out.cat == XC(UNCOND_BR)) {

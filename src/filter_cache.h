@@ -61,9 +61,6 @@ class FilterCache : public Cache {
 
         lock_t filterLock;
         uint64_t fGETSHit, fGETXHit;
-        uint64_t fGETM; // cache misses
-        uint64_t fGETMLat; // latency added 
-
 
         struct PrefetchInfo {
             Address addr;
@@ -86,7 +83,6 @@ class FilterCache : public Cache {
             fGETSHit = fGETXHit = 0;
             srcId = -1;
             reqFlags = 0;
-            fGETM = fGETMLat = 0;
         }
 
         void setSourceId(uint32_t id) {
@@ -121,15 +117,6 @@ class FilterCache : public Cache {
             fgetsStat->init("fhGETS", "Filtered GETS hits", &fGETSHit);
             ProxyStat* fgetxStat = new ProxyStat();
             fgetxStat->init("fhGETX", "Filtered GETX hits", &fGETXHit);
-
-            ProxyStat* fgetmStat = new ProxyStat();
-            fgetmStat->init("fmGET", "Filtered GET Misses", &fGETM);
-            ProxyStat* fgetmlatStat = new ProxyStat();
-            fgetmlatStat->init("fmGETLat", "Filtered GET Misses latency", &fGETMLat);
-            
-            cacheStat->append(fgetmStat);
-            cacheStat->append(fgetmlatStat);
-
             cacheStat->append(fgetsStat);
             cacheStat->append(fgetxStat);
 
@@ -142,11 +129,7 @@ class FilterCache : public Cache {
             uint32_t idx = vLineAddr & setMask;
             uint64_t availCycle = filterArray[idx].availCycle; //read before, careful with ordering to avoid timing races
             if (vLineAddr == filterArray[idx].rdAddr) {
-                // if (availCycle <= curCycle) fGETSHit++;
-                // else {
-                //     fGETM++;
-                //     fGETMLat += availCycle - curCycle;
-                // }
+                fGETSHit++;
                 return MAX(curCycle, availCycle);
             } else {
                 return replace(vLineAddr, idx, true, curCycle, pc);
@@ -158,11 +141,7 @@ class FilterCache : public Cache {
             uint32_t idx = vLineAddr & setMask;
             uint64_t availCycle = filterArray[idx].availCycle; //read before, careful with ordering to avoid timing races
             if (vLineAddr == filterArray[idx].wrAddr) {
-                // if (availCycle <= curCycle) fGETXHit++;
-                // else {
-                //     fGETM++;
-                //     fGETMLat += availCycle - curCycle;
-                // }
+                fGETXHit++;
                 //NOTE: Stores don't modify availCycle; we'll catch matches in the core
                 //filterArray[idx].availCycle = curCycle; //do optimistic store-load forwarding
                 return MAX(curCycle, availCycle);
@@ -217,20 +196,20 @@ class FilterCache : public Cache {
             prefetchQueue.emplace_back(lineAddr, skip);
         }
 
-        void executePrefetch(uint64_t curCycle, uint64_t dispatchCycle, uint64_t reqSatisfiedCycle, OOOCoreRecorder *cRec) {
-            futex_lock(&filterLock);
+  void executePrefetch(uint64_t curCycle, uint64_t dispatchCycle, uint64_t reqSatisfiedCycle, OOOCoreRecorder *cRec) {
+    futex_lock(&filterLock);
             //Send out any prefetch requests that were created during the prior access
             if (unlikely(!prefetchQueue.empty())) {
                 for (auto& prefetch : prefetchQueue) {
-                    MESIState dummyState = MESIState::I;
-                    MemReq req = {0 /*No PC*/, prefetch.addr, GETS, 0, &dummyState, dispatchCycle, &filterLock, dummyState, srcId, MemReq::PREFETCH | MemReq::SPECULATIVE, prefetch.skip};
-                    uint64_t respCycle = access(req);
-                    cRec->record(curCycle, dispatchCycle, respCycle);
+                  MESIState dummyState = MESIState::I;
+                  MemReq req = {0 /*No PC*/, prefetch.addr, GETS, 0, &dummyState, dispatchCycle, &filterLock, dummyState, srcId, MemReq::PREFETCH | MemReq::SPECULATIVE, prefetch.skip};
+                  uint64_t respCycle = access(req);
+                  cRec->record(curCycle, dispatchCycle, respCycle);
                 }
                 prefetchQueue.clear();
             }
             futex_unlock(&filterLock);
-        }
+  }
 
         void contextSwitch() {
             futex_lock(&filterLock);

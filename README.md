@@ -1,3 +1,7 @@
+Intel PT
+=========
+The changes to allow for limited intel PT usage are completely experimental and there is no guarantee a commit will even build.
+
 zsim_trace
 =========
 

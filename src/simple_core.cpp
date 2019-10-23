@@ -49,28 +49,18 @@ uint64_t SimpleCore::getPhaseCycles() const {
 }
 
 void SimpleCore::load(Address addr, Address pc) {
-    curCycle += 16.375; //l1d->load(addr, curCycle, pc);
+    curCycle = l1d->load(addr, curCycle, pc);
 }
 
 void SimpleCore::store(Address addr, Address pc) {
-    curCycle += 1; //l1d->store(addr, curCycle, pc);
+    curCycle = l1d->store(addr, curCycle, pc);
 }
 
 void SimpleCore::bbl(Address bblAddr, BblInfo* bblInfo) {
     //info("BBL %s %p", name.c_str(), bblInfo);
     //info("%d %d", bblInfo->instrs, bblInfo->bytes);
     instrs += bblInfo->instrs;
-    curCycle += bblInfo->instrs; // One cycle per instruction + latency for store
-
-    // TODO: how many cycles should i add for a prefetch?
-    // currently only 1 for the instruction, but none for the load. acts async
-    //if (bblInfo->prefetch.size != 0){
-    // for (size_t i = 0; i < 1; ++i){
-    //     // ignores the latency of this op. it will still have latency
-    //     // for the next access as availiable cycle will be updated in the filter cache
-    //     l1i->load(bblInfo->prefetch.addr + (1 << lineBits) * i, curCycle, 0);
-    // }
-    //}
+    curCycle += bblInfo->instrs;
 
     Address endBblAddr = bblAddr + bblInfo->bytes;
     for (Address fetchAddr = bblAddr; fetchAddr < endBblAddr; fetchAddr+=(1 << lineBits)) {
