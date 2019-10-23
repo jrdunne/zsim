@@ -159,11 +159,12 @@ class IntelPTReader : public TraceReader {
 
     static constexpr size_t buffer_size = 256;
     static constexpr size_t line_size = 256;
+    static constexpr size_t gz_buffer_size = 1048576;
 
     //const std::string trace_file_path;
     const std::string gunzip_command = "gunzip -c " + trace_file_path;
 
-    FILE * trace_file_ptr = NULL;
+    gzFile trace_file_ptr = NULL;
     xed_state_t xed_state;
 
     char line_buffer[buffer_size][line_size];

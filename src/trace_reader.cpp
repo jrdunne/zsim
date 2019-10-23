@@ -76,15 +76,7 @@ bool IntelPTReader::operator!() {
 InstInfo * IntelPTReader::nextInstruction() {
     // parse next line into InstInfo as next_instr_index
     // update instr_buffer[current_] with info from next instruction
-    // 
-
-    //if (count % 100000 == 0) {
-    //    make_custom_op();
-    //} else {
-        parse_instr(get_next_line(), &instr_buffer[next_instr_index].first, &instr_buffer[next_instr_index].second);
-    //}
-
-
+    parse_instr(get_next_line(), &instr_buffer[next_instr_index].first, &instr_buffer[next_instr_index].second);
 
     // update branch taken info
     if (instr_buffer[next_instr_index].first.pc == instr_buffer[current_instr_index].first.pc + 1) {
@@ -99,8 +91,6 @@ InstInfo * IntelPTReader::nextInstruction() {
     ++next_instr_index;
     if (next_instr_index == buffer_size) next_instr_index = 0;
 
-    //if (count % 1000000 == 0) printf("executed %d skipped %d", (int)count, (int)skipped);
-
     return &instr_buffer[index_to_return].first;
 }
 
@@ -109,10 +99,8 @@ void IntelPTReader::make_custom_op() {
     // ++next_instr_index and ++current_instr_index
     //--instr_buffer[next_instr_index].first;
 
-    //  set length of prefetch opcode to 6
     make_nop(&instr_buffer[next_instr_index].second, 6, &xed_state);
 
-    // dummy values for now
     //instr_buffer[next_instr_index].mem_addr[0] = instr_buffer[current_instr_index].pc + 10; // Addr to prefetch to
     // instr_buffer[next_instr_index].mem_addr[1] = 1; // size of prefetch in cache lines?
 
@@ -129,7 +117,7 @@ void IntelPTReader::make_custom_op() {
 
 void IntelPTReader::fill_line_buffer() {
     int mcount = 0;
-    while(fgets(line_buffer[mcount], line_size, trace_file_ptr) != NULL) {
+    while(gzgets(trace_file_ptr, line_buffer[mcount], line_size) != NULL) {
         ++mcount;
         if (mcount == buffer_size) break;
     }
@@ -138,7 +126,7 @@ void IntelPTReader::fill_line_buffer() {
     // the simulation
     if (unlikely(mcount != buffer_size)) {
         line_buffer[mcount][0] = '!';
-        pclose(trace_file_ptr);
+        gzclose(trace_file_ptr);
         trace_file_ptr = NULL;
     }
 }
@@ -157,7 +145,6 @@ void IntelPTReader::parse_instr(char * line, InstInfo * out, xed_decoded_inst_t 
     // last line that is read is marked as !. can be an error
     if (unlikely(end || line[0] == '!')) {
         end = true;
-        //printf("Number of branches taken %llu number of total instrs %llu", branch_count, count);
         memset(out, 0, sizeof(InstInfo));
         return;
     }
@@ -167,7 +154,7 @@ void IntelPTReader::parse_instr(char * line, InstInfo * out, xed_decoded_inst_t 
     out->pid = 0;
     out->taken = false;
 
-    // <whitespace><hex pc> <(binary name)> <'ilen:'> <instr size> <'insn:'> <space separated hex><newline>
+    // <whitespace><[tid]> <hex pc> <(binary name)> <'ilen:'> <instr size> <'insn:'> <space separated hex><newline>
     //    ffffffff8a2137c1 ([kernel.kallsyms]) ilen: 1 insn: 5c
     
     char * begin = nullptr;
@@ -214,9 +201,6 @@ void IntelPTReader::parse_instr(char * line, InstInfo * out, xed_decoded_inst_t 
 
     xed_error_enum_t xed_error;
     xed_decoded_inst_zero_set_mode(xed_ptr, &xed_state);
-    //xed_decoded_inst_set_mode(xed_ptr,
-    //                            XED_MACHINE_MODE_LONG_64,
-    //                            XED_ADDRESS_WIDTH_64b);
     xed_error = xed_decode(xed_ptr, 
                 XED_STATIC_CAST(const xed_uint8_t*, xed_buffer),
                 ilen);
@@ -232,8 +216,6 @@ void IntelPTReader::parse_instr(char * line, InstInfo * out, xed_decoded_inst_t 
     out->unknown_type = (xed_error != XED_ERROR_NONE);
     out->valid = true;
     out->target = xed_decoded_inst_get_branch_displacement(xed_ptr) + out->pc;
-    //xed_decoded_inst_number_of_memory_operands
-    //xed_decoded_inst_operand_elements ( , index)
     out->mem_addr[0] = 0;
     out->mem_addr[1] = 0;
     out->mem_used[0] = false;
@@ -255,14 +237,16 @@ void IntelPTReader::parse_instr(char * line, InstInfo * out, xed_decoded_inst_t 
         ++branch_count;
     }
 
-
     out->taken = false; // dont know yet
 }
 
 void IntelPTReader::test_trace_file() {
-    trace_file_ptr = popen(gunzip_command.c_str(), "r");
+    trace_file_ptr = gzopen(trace_file_path.c_str(), "rb");
     if (trace_file_ptr == NULL) {
         panic("Trace file not found %s", trace_file_path.c_str());
+    }
+    if (gzbuffer(trace_file_ptr, gz_buffer_size) == -1) {
+        panic("Failed to set buffer size to %zu", gz_buffer_size);
     }
 }
 
@@ -274,9 +258,6 @@ void IntelPTReader::init_buffers() {
 
     for (size_t i = 0; i < buffer_size; ++i) {
         xed_decoded_inst_zero_set_mode(&instr_buffer[i].second, &xed_state);
-        //xed_decoded_inst_set_mode(&instr_buffer[i].second,
-        //                            XED_MACHINE_MODE_LONG_64,
-        //                            XED_ADDRESS_WIDTH_64b);
     }
 
     parse_instr(get_next_line(), &instr_buffer[current_instr_index].first, &instr_buffer[current_instr_index].second);
@@ -411,13 +392,7 @@ void ParsedIntelPTReader::read_next_instr() {
                 XED_STATIC_CAST(const xed_uint8_t*, instr.insn),
                 instr.size);
 
-    // unsupported instruction  trace_decoder.cpp:189
     ++count;
-    // if (xed_ptr->_inst == 0x0 || xed_decoded_inst_get_iclass(xed_ptr) == XED_ICLASS_IRETQ) {
-    //     ++skipped;
-    //     if (skipped > 10000) panic("Skipped over 10000 instructions");
-    //     make_nop(xed_ptr, instr.size, &xed_state);
-    // }
 
     out.target = xed_decoded_inst_get_branch_displacement(xed_ptr) + out.pc;
 
